@@ -111,8 +111,8 @@ Private Sub Importar(soloUltimo As Boolean)
 
     n = ListarCierres(meses, archivos)
     If n = 0 Then
-        MsgBox "No encontre archivos FMS_AAAAMMDD en:" & vbCrLf & CARPETA_FMS & _
-               vbCrLf & "Revisa CARPETA_FMS al inicio del modulo mod_FMS.", vbExclamation
+        MsgBox "No encontre archivos FMS_AAAAMMDD en:" & vbCrLf & CarpetaFMS() & _
+               vbCrLf & "Revisa la ruta en la celda C2 (amarilla) de la hoja FMS.", vbExclamation
         Exit Sub
     End If
 
@@ -139,6 +139,19 @@ Manejo:
     Resume Limpieza
 End Sub
 
+'------------------------- AUXILIARES: ruta --------------------------
+' La ruta de la carpeta se lee de la celda C2 (amarilla) de la hoja
+' FMS; si esta vacia, se usa la constante CARPETA_FMS como respaldo.
+Private Function CarpetaFMS() As String
+    Dim ws As Worksheet, ruta As String
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(HOJA_DEST)
+    On Error GoTo 0
+    If Not ws Is Nothing Then ruta = Trim$(CStr(ws.Cells(2, 3).Value))
+    If ruta = vbNullString Then ruta = CARPETA_FMS
+    CarpetaFMS = ruta
+End Function
+
 '--- Escanea la carpeta y devuelve, por mes, el archivo de cierre ----
 '    (la fecha AAAAMMDD mas alta de cada AAAAMM), orden ascendente
 Private Function ListarCierres(ByRef meses() As String, _
@@ -149,7 +162,7 @@ Private Function ListarCierres(ByRef meses() As String, _
 
     Dim carpeta As String, f As String, f8 As String
     Dim ym As String, mm As Long, dd As Long
-    carpeta = CARPETA_FMS
+    carpeta = CarpetaFMS()
     If Right$(carpeta, 1) <> "\" Then carpeta = carpeta & "\"
 
     f = Dir$(carpeta & "FMS_*.xls*")
@@ -296,6 +309,12 @@ Private Function ObtenerHojaDestino() As Worksheet
     Set ws = ThisWorkbook.Worksheets(HOJA_DEST)
     On Error GoTo 0
     If Not ws Is Nothing Then
+        If Trim$(CStr(ws.Cells(2, 3).Value)) = vbNullString Then
+            ws.Cells(2, 2).Value = "Carpeta FMS ->"
+            ws.Cells(2, 2).Font.Bold = True
+            ws.Cells(2, 3).Value = CARPETA_FMS
+            ws.Cells(2, 3).Interior.Color = RGB(255, 242, 204)
+        End If
         Set ObtenerHojaDestino = ws
         Exit Function
     End If
@@ -305,8 +324,12 @@ Private Function ObtenerHojaDestino() As Worksheet
     ws.Name = HOJA_DEST
     cat = Catalogo()
 
-    ws.Cells(1, 1).Value = "Datos FMS (Fondo 1 y 2) - pegado por macro ImportarFMS (NO EDITAR)"
+    ws.Cells(1, 1).Value = "Datos FMS (Fondo 1 y 2) - pegado por macro ImportarFMS (NO EDITAR salvo la ruta)"
     ws.Cells(1, 1).Font.Bold = True
+    ws.Cells(2, 2).Value = "Carpeta FMS ->"
+    ws.Cells(2, 2).Font.Bold = True
+    ws.Cells(2, 3).Value = CARPETA_FMS
+    ws.Cells(2, 3).Interior.Color = RGB(255, 242, 204)
     ws.Cells(3, 2).Value = "VALORES FONDO 1 (S/)"
     ws.Cells(20, 2).Value = "VALORES FONDO 2 (S/)"
     ws.Cells(3, 2).Font.Bold = True: ws.Cells(20, 2).Font.Bold = True
@@ -400,6 +423,9 @@ Public Sub CrearMonitor()
     Dim i As Long, c As Long, f As Date
 
     Application.ScreenUpdating = False
+    ObtenerHojaDestino          ' crea la hoja FMS (vacia) si no existe:
+                                ' las formulas de Calculos/Resumen la referencian
+                                ' y sin ella Excel pediria un archivo externo
     On Error Resume Next
     Application.DisplayAlerts = False
     ThisWorkbook.Worksheets(HOJA_RPM).Delete
