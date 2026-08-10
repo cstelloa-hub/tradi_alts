@@ -470,11 +470,17 @@ Public Sub CrearMonitor()
 
     CrearGraficoRPM ws, "YTD Soles", RPM_B_INI, RPM_B_INI + 5, ws.Range("B35")
     CrearGraficoRPM ws, "YTD Dolares", RPM_B_INI + 6, RPM_B_FIN, ws.Range("J35")
+
+    CrearCalculos
+    CrearResumen
+    Application.Calculate
     ActualizarGraficosMeses
 
     Application.ScreenUpdating = True
-    MsgBox "Hoja '" & HOJA_RPM & "' creada: retornos jalados de '" & R2_HOJA & _
-           "' + Base 0 + graficos.", vbInformation, "Crear Monitor"
+    MsgBox "Monitor creado: hojas '" & HOJA_RPM & "', '" & HOJA_CALC & "' y '" & _
+           HOJA_RES & "' construidas con formulas." & vbCrLf & _
+           "Falta solo correr ImportarFMS para llenar la hoja FMS.", _
+           vbInformation, "Crear Monitor"
 End Sub
 
 Private Sub CrearGraficoRPM(ws As Worksheet, titulo As String, _
@@ -533,4 +539,291 @@ Public Sub ActualizarGraficosMeses()
             End With
         Next s
     Next co
+End Sub
+
+'=====================================================================
+' HOJAS "Calculos" y "Resumen" (las construye CrearMonitor)
+'---------------------------------------------------------------------
+' Calculos (solo formulas, grid fijo dic-25..dic-27 en cols E..AC):
+'   %F1 filas 5-16, %F2 21-32, peso combinado 37-48,
+'   contribucion (peso combinado mes anterior x retorno) 53-64,
+'   MTD ponderado 65-67, normalizado MTD 71-73 y YTD 74-76.
+'   Toda referencia a FMS es por FECHA (INDEX/MATCH), asi que un mes
+'   sin archivo en la carpeta simplemente queda vacio, sin descuadrar.
+' Resumen: selectores de fecha y fondo, KPIs MTD/YTD por moneda,
+'   tablas PEN y USD (anos desde "2. Retornos (2)", YTD/1M/3M/6M,
+'   posicion MM y % de F1/F2) con heatmap de formato condicional.
+'=====================================================================
+Private Const HOJA_CALC As String = "Calculos"
+Private Const HOJA_RES As String = "Resumen"
+Private Const RPMQ As String = "'Retorno por meses'!"
+
+Private Function IdxFMS(fila As Long, filaFecha As Long, refFecha As String) As String
+    IdxFMS = "INDEX(FMS!$E$" & fila & ":$BZ$" & fila & ",MATCH(" & refFecha & _
+             ",FMS!$E$" & filaFecha & ":$BZ$" & filaFecha & ",0))"
+End Function
+
+Private Function IdxFMSBlq(f1 As Long, f2 As Long, filaFecha As Long, _
+                           refFecha As String) As String
+    IdxFMSBlq = "INDEX(FMS!$E$" & f1 & ":$BZ$" & f2 & ",0,MATCH(" & refFecha & _
+                ",FMS!$E$" & filaFecha & ":$BZ$" & filaFecha & ",0))"
+End Function
+
+Public Sub CrearCalculos()
+    Dim ws As Worksheet, cat As Variant
+    Dim i As Long, c As Long, L As String, Lp As String, fRef As String, fPrev As String
+    Dim pos As String, aum As String, pes As String, ret As String
+
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets(HOJA_CALC).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    Set ws = ThisWorkbook.Worksheets.Add( _
+        After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = HOJA_CALC
+    cat = Catalogo()
+
+    ws.Cells(1, 1).Value = "Calculos - generado por macro CrearMonitor (solo formulas, NO EDITAR)"
+    ws.Cells(1, 1).Font.Bold = True
+    ws.Cells(3, 2).Value = "PESO % FONDO 1": ws.Cells(19, 2).Value = "PESO % FONDO 2"
+    ws.Cells(35, 2).Value = "PESO % COMBINADO (F1+F2)"
+    ws.Cells(51, 2).Value = "CONTRIBUCION MENSUAL (peso combinado mes anterior x retorno)"
+    ws.Cells(69, 2).Value = "NORMALIZADO (fondos listados = 100%)"
+    Dim rl As Variant
+    For Each rl In Array(3, 19, 35, 51, 69)
+        ws.Cells(CLng(rl), 2).Font.Bold = True
+    Next rl
+
+    For c = RPM_MES_INI To RPM_MES_FIN         ' fila 4: grid fijo de fechas
+        ws.Cells(4, c).Value = DateSerial(2025, 12 + (c - RPM_MES_INI), 1)
+        ws.Cells(4, c).NumberFormat = "mmm-yy"
+        ws.Cells(4, c).Font.Bold = True
+        ws.Columns(c).ColumnWidth = 9
+    Next c
+
+    For i = 0 To UBound(cat)
+        Dim fN As Variant
+        For Each fN In Array(5, 21, 37, 53)
+            ws.Cells(CLng(fN) + i, 2).Value = cat(i)(0)
+        Next fN
+        For c = RPM_MES_INI To RPM_MES_FIN
+            L = Split(ws.Cells(1, c).Address, "$")(1)
+            fRef = L & "$4"
+            ' --- %F1 / %F2 / combinado -----------------------------------
+            pos = IdxFMS(5 + i, 4, fRef): aum = IdxFMS(17, 4, fRef)
+            ws.Cells(5 + i, c).Formula = "=IFERROR(" & pos & "/" & aum & ","""")"
+            pos = IdxFMS(22 + i, 21, fRef): aum = IdxFMS(34, 21, fRef)
+            ws.Cells(21 + i, c).Formula = "=IFERROR(" & pos & "/" & aum & ","""")"
+            ws.Cells(37 + i, c).Formula = "=IFERROR((" & IdxFMS(5 + i, 4, fRef) & _
+                "+" & IdxFMS(22 + i, 21, fRef) & ")/(" & IdxFMS(17, 4, fRef) & _
+                "+" & IdxFMS(34, 21, fRef) & "),"""")"
+            ws.Cells(5 + i, c).NumberFormat = "0.00%"
+            ws.Cells(21 + i, c).NumberFormat = "0.00%"
+            ws.Cells(37 + i, c).NumberFormat = "0.00%"
+            ' --- contribucion (desde ene-26) -----------------------------
+            If c > RPM_MES_INI Then
+                Lp = Split(ws.Cells(1, c - 1).Address, "$")(1)
+                ws.Cells(53 + i, c).Formula = "=IF(OR(" & RPMQ & L & (RPM_R_INI + i) & _
+                    "=""""," & Lp & (37 + i) & "=""""),""""," & Lp & (37 + i) & _
+                    "*" & RPMQ & L & (RPM_R_INI + i) & ")"
+                ws.Cells(53 + i, c).NumberFormat = "0.000%"
+            End If
+        Next c
+    Next i
+
+    ' --- MTD ponderado + normalizado -----------------------------------
+    Dim lbl As Variant, k As Long
+    lbl = Array(Array("MTD Ponderado PEN", 53, 58), Array("MTD Ponderado USD", 59, 64), _
+                Array("MTD Ponderado Total", 53, 64))
+    For k = 0 To 2
+        ws.Cells(65 + k, 2).Value = lbl(k)(0): ws.Cells(65 + k, 2).Font.Bold = True
+    Next k
+    Dim nrm As Variant
+    nrm = Array(Array("Normalizado MTD PEN", 5, 10, 22, 27, 5, 10), _
+                Array("Normalizado MTD USD", 11, 16, 28, 33, 11, 16), _
+                Array("Normalizado MTD Total", 5, 16, 22, 33, 5, 16))
+    For k = 0 To 2
+        ws.Cells(71 + k, 2).Value = nrm(k)(0): ws.Cells(71 + k, 2).Font.Bold = True
+        ws.Cells(74 + k, 2).Value = Replace(CStr(nrm(k)(0)), "MTD", "YTD")
+        ws.Cells(74 + k, 2).Font.Bold = True
+    Next k
+
+    For c = RPM_MES_INI + 1 To RPM_MES_FIN
+        L = Split(ws.Cells(1, c).Address, "$")(1)
+        Lp = Split(ws.Cells(1, c - 1).Address, "$")(1)
+        fPrev = Lp & "$4"
+        For k = 0 To 2
+            ws.Cells(65 + k, c).Formula = "=IF(COUNT(" & L & lbl(k)(1) & ":" & _
+                L & lbl(k)(2) & ")=0,"""",SUM(" & L & lbl(k)(1) & ":" & L & lbl(k)(2) & "))"
+            ws.Cells(65 + k, c).NumberFormat = "0.00%"
+            pes = "(" & IdxFMSBlq(CLng(nrm(k)(1)) + 0, CLng(nrm(k)(2)) + 0, 4, fPrev) & _
+                  "+" & IdxFMSBlq(CLng(nrm(k)(3)) + 17, CLng(nrm(k)(4)) + 17, 21, fPrev) & ")"
+            ret = RPMQ & L & nrm(k)(5) & ":" & L & nrm(k)(6)
+            ws.Cells(71 + k, c).Formula = "=IFERROR(SUMPRODUCT(" & pes & ",N(" & ret & _
+                "))/SUMPRODUCT(" & pes & "*(" & ret & "<>"""")),"""")"
+            ws.Cells(71 + k, c).NumberFormat = "0.00%"
+            ws.Cells(74 + k, c).Formula = "=IF(" & L & (71 + k) & "="""",""""," & _
+                "IF(OR(" & Lp & (74 + k) & "="""",YEAR(" & L & "$4)<>YEAR(" & Lp & "$4))," & _
+                L & (71 + k) & ",(1+" & Lp & (74 + k) & ")*(1+" & L & (71 + k) & ")-1))"
+            ws.Cells(74 + k, c).NumberFormat = "0.00%"
+        Next k
+    Next c
+
+    ws.Columns(1).ColumnWidth = 2: ws.Columns(2).ColumnWidth = 34
+    ws.Cells.Font.Name = "Arial": ws.Cells.Font.Size = 8
+End Sub
+
+Public Sub CrearResumen()
+    Dim ws As Worksheet, cat As Variant, i As Long, k As Long
+    Dim src As String, rr As Long, r As Long, fi As Long
+
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets(HOJA_RES).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    Set ws = ThisWorkbook.Worksheets.Add( _
+        After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = HOJA_RES
+    cat = Catalogo()
+    src = "'" & R2_HOJA & "'!"
+
+    ws.Cells(1, 1).Value = "Fondos Tradicionales - Resumen"
+    ws.Cells(1, 1).Font.Bold = True: ws.Cells(1, 1).Font.Size = 10
+
+    ' --- selectores -----------------------------------------------------
+    ws.Range("B3").Value = "Fecha de reporte:": ws.Range("B3").Font.Bold = True
+    ws.Range("F3").Value = "Fondo:": ws.Range("F3").Font.Bold = True
+    With ws.Range("C3").Validation
+        .Delete
+        .Add Type:=xlValidateList, Formula1:="='" & HOJA_RPM & "'!$F$4:$AC$4"
+    End With
+    With ws.Range("G3").Validation
+        .Delete
+        .Add Type:=xlValidateList, Formula1:="='" & HOJA_RPM & "'!$B$5:$B$16"
+    End With
+    ws.Range("C3").NumberFormat = "mmm-yy"
+    ws.Range("C3").Interior.Color = RGB(255, 242, 204)
+    ws.Range("G3").Interior.Color = RGB(255, 242, 204)
+    ws.Range("G3").Value = cat(0)(0)
+    ws.Range("P3").Formula = "=IFERROR(MATCH($C$3,'" & HOJA_RPM & _
+                             "'!$E$4:$AC$4,0),"""")"
+    ws.Range("P3").Font.Color = RGB(217, 217, 217)
+
+    ' C3 inicial = ultimo mes con retorno
+    Dim wsR As Worksheet, lastCol As Long, c As Long
+    Set wsR = ThisWorkbook.Worksheets(HOJA_RPM)
+    lastCol = RPM_MES_INI + 1
+    For c = RPM_MES_FIN To RPM_MES_INI + 1 Step -1
+        If Application.WorksheetFunction.Count( _
+           wsR.Range(wsR.Cells(RPM_R_INI, c), wsR.Cells(RPM_R_FIN, c))) > 0 Then
+            lastCol = c: Exit For
+        End If
+    Next c
+    ws.Range("C3").Value = wsR.Cells(RPM_FECHA1, lastCol).Value
+
+    ' --- KPIs -----------------------------------------------------------
+    ws.Range("B5").Value = "Moneda": ws.Range("C5").Value = "MTD": ws.Range("D5").Value = "YTD"
+    EncabezadoFila ws, 5, 2, 4
+    Dim mon As Variant: mon = Array("PEN", "USD", "Total")
+    For k = 0 To 2
+        ws.Cells(6 + k, 2).Value = mon(k): ws.Cells(6 + k, 2).Font.Bold = True
+        ws.Cells(6 + k, 3).Formula = "=IF($P$3="""","""",IFERROR(INDEX(" & _
+            HOJA_CALC & "!$E$" & (71 + k) & ":$AC$" & (71 + k) & ",$P$3),""""))"
+        ws.Cells(6 + k, 4).Formula = "=IF($P$3="""","""",IFERROR(INDEX(" & _
+            HOJA_CALC & "!$E$" & (74 + k) & ":$AC$" & (74 + k) & ",$P$3),""""))"
+        ws.Cells(6 + k, 3).NumberFormat = "0.00%": ws.Cells(6 + k, 4).NumberFormat = "0.00%"
+    Next k
+    ws.Range("F5").Value = "Fondo seleccionado": ws.Range("G5").Value = "MTD"
+    ws.Range("H5").Value = "Acum. dic-25"
+    EncabezadoFila ws, 5, 6, 8
+    ws.Range("F6").Formula = "=$G$3"
+    ws.Range("G6").Formula = "=IF($P$3="""","""",IFERROR(INDEX('" & HOJA_RPM & _
+        "'!$E$5:$AC$16,MATCH($G$3,'" & HOJA_RPM & "'!$B$5:$B$16,0),$P$3),""""))"
+    ws.Range("H6").Formula = "=IF($P$3="""","""",IFERROR(INDEX('" & HOJA_RPM & _
+        "'!$E$21:$AC$32,MATCH($G$3,'" & HOJA_RPM & "'!$B$5:$B$16,0),$P$3),""""))"
+    ws.Range("G6:H6").NumberFormat = "0.00%"
+
+    ' --- tablas PEN y USD ----------------------------------------------
+    Dim blq As Variant
+    blq = Array(Array("FONDOS PEN", 0, 13), Array("FONDOS USD", 6, 23))
+    Dim b As Long
+    For b = 0 To 1
+        Dim idx0 As Long, rIni As Long
+        idx0 = blq(b)(1): rIni = blq(b)(2)
+        ws.Cells(rIni - 2, 2).Value = blq(b)(0): ws.Cells(rIni - 2, 2).Font.Bold = True
+        Dim hdrs As Variant
+        hdrs = Array("Instrumento", "2023", "2024", "2025", "YTD", "1M", "3M", "6M", _
+                     "Pos F1 (MM)", "Pos F2 (MM)", "% F1", "% F2")
+        For k = 0 To UBound(hdrs)
+            ws.Cells(rIni - 1, 2 + k).Value = hdrs(k)
+        Next k
+        EncabezadoFila ws, rIni - 1, 2, 13
+
+        For i = 0 To 5
+            fi = idx0 + i: r = rIni + i: rr = RPM_R_INI + fi
+            ws.Cells(r, 2).Formula = "='" & HOJA_RPM & "'!B" & rr
+            For k = 0 To 2                     ' 2023 / 2024 / 2025
+                Dim yr As String: yr = CStr(2023 + k)
+                ws.Cells(r, 3 + k).Formula = "=IFERROR(INDEX(" & src & "$" & _
+                    R2_COL_INI & "$" & R2_FILA_INI & ":$" & R2_COL_FIN & "$" & R2_FILA_FIN & _
+                    ",MATCH('" & HOJA_RPM & "'!$C$" & rr & "," & src & "$" & R2_COL_SBS & "$" & _
+                    R2_FILA_INI & ":$" & R2_COL_SBS & "$" & R2_FILA_FIN & ",0),MATCH(" & yr & _
+                    "," & src & "$" & R2_COL_INI & "$" & R2_FILA_FECHAS & ":$" & R2_COL_FIN & _
+                    "$" & R2_FILA_FECHAS & ",0)),IFERROR(INDEX(" & src & "$" & R2_COL_INI & _
+                    "$" & R2_FILA_INI & ":$" & R2_COL_FIN & "$" & R2_FILA_FIN & ",MATCH('" & _
+                    HOJA_RPM & "'!$C$" & rr & "," & src & "$" & R2_COL_SBS & "$" & R2_FILA_INI & _
+                    ":$" & R2_COL_SBS & "$" & R2_FILA_FIN & ",0),MATCH(""" & yr & """," & src & _
+                    "$" & R2_COL_INI & "$" & R2_FILA_FECHAS & ":$" & R2_COL_FIN & "$" & _
+                    R2_FILA_FECHAS & ",0)),""""))"
+            Next k
+            ws.Cells(r, 6).Formula = "=IF($P$3="""","""",IFERROR(EXP(SUMPRODUCT(LN(1+" & _
+                "N(OFFSET('" & HOJA_RPM & "'!$D$4," & (fi + 1) & _
+                ",$P$3-MONTH($C$3)+1,1,MONTH($C$3))))))-1,""""))"
+            ws.Cells(r, 7).Formula = "=IF($P$3="""","""",IF(INDEX('" & HOJA_RPM & _
+                "'!$E$" & rr & ":$AC$" & rr & ",$P$3)="""","""",INDEX('" & HOJA_RPM & _
+                "'!$E$" & rr & ":$AC$" & rr & ",$P$3)))"
+            ws.Cells(r, 8).Formula = "=IF(OR($P$3="""",$P$3<3),"""",IFERROR(EXP(" & _
+                "SUMPRODUCT(LN(1+N(OFFSET('" & HOJA_RPM & "'!$D$4," & (fi + 1) & _
+                ",$P$3-2,1,3)))))-1,""""))"
+            ws.Cells(r, 9).Formula = "=IF(OR($P$3="""",$P$3<6),"""",IFERROR(EXP(" & _
+                "SUMPRODUCT(LN(1+N(OFFSET('" & HOJA_RPM & "'!$D$4," & (fi + 1) & _
+                ",$P$3-5,1,6)))))-1,""""))"
+            ws.Cells(r, 10).Formula = "=IFERROR(" & IdxFMS(5 + fi, 4, "$C$3") & _
+                "/1000000,"""")"
+            ws.Cells(r, 11).Formula = "=IFERROR(" & IdxFMS(22 + fi, 21, "$C$3") & _
+                "/1000000,"""")"
+            ws.Cells(r, 12).Formula = "=IFERROR(" & IdxFMS(5 + fi, 4, "$C$3") & "/" & _
+                IdxFMS(17, 4, "$C$3") & ","""")"
+            ws.Cells(r, 13).Formula = "=IFERROR(" & IdxFMS(22 + fi, 21, "$C$3") & "/" & _
+                IdxFMS(34, 21, "$C$3") & ","""")"
+            ws.Range(ws.Cells(r, 3), ws.Cells(r, 9)).NumberFormat = "0.00%"
+            ws.Range(ws.Cells(r, 10), ws.Cells(r, 11)).NumberFormat = "#,##0.0"
+            ws.Range(ws.Cells(r, 12), ws.Cells(r, 13)).NumberFormat = "0.00%"
+        Next i
+        ' heatmap 3 colores sobre retornos
+        With ws.Range(ws.Cells(rIni, 3), ws.Cells(rIni + 5, 9)).FormatConditions.AddColorScale(3)
+            .ColorScaleCriteria(1).FormatColor.Color = RGB(248, 105, 107)
+            .ColorScaleCriteria(2).Type = xlConditionValuePercentile
+            .ColorScaleCriteria(2).Value = 50
+            .ColorScaleCriteria(2).FormatColor.Color = RGB(255, 235, 132)
+            .ColorScaleCriteria(3).FormatColor.Color = RGB(99, 190, 123)
+        End With
+    Next b
+
+    ws.Columns(1).ColumnWidth = 2: ws.Columns(2).ColumnWidth = 32
+    For k = 3 To 13
+        ws.Columns(k).ColumnWidth = 10
+    Next k
+    ws.Cells.Font.Name = "Arial": ws.Cells.Font.Size = 8
+    ws.Cells(1, 1).Font.Size = 10
+End Sub
+
+Private Sub EncabezadoFila(ws As Worksheet, fila As Long, c1 As Long, c2 As Long)
+    With ws.Range(ws.Cells(fila, c1), ws.Cells(fila, c2))
+        .Interior.Color = RGB(212, 12, 12)
+        .Font.Color = vbWhite
+        .Font.Bold = True
+    End With
 End Sub
