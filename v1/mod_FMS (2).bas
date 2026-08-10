@@ -47,6 +47,32 @@ Private Const FMS_SBS As Long = 4          ' col D: Cod_sbs
 Private Const FMS_VAL As Long = 10         ' col J: Val_total (S/)
 Private Const MARCA_AUM As String = "1.1.1"
 
+'------------------- ANCLAS EN "2. Retornos (2)" ---------------------
+' Verificar contra tu hoja; si algo esta en otra fila/col, se cambia aqui
+Private Const R2_HOJA As String = "2. Retornos (2)"
+Private Const R2_COL_SBS As String = "B"       ' col de Codigo SBS
+Private Const R2_FILA_FECHAS As Long = 7       ' fila de headers de fecha
+Private Const R2_FILA_INI As Long = 8          ' primera fila de fondos
+Private Const R2_FILA_FIN As Long = 30         ' holgura: cubre PEN y USD
+Private Const R2_COL_INI As String = "F"       ' primera col de datos
+Private Const R2_COL_FIN As String = "EQ"      ' ultima col de datos
+
+'------------------- LAYOUT "Retorno por meses" ----------------------
+Private Const HOJA_RPM As String = "Retorno por meses"
+Private Const RPM_MES_INI As Long = 5          ' col E = dic-25
+Private Const RPM_MES_FIN As Long = 29         ' col AC = dic-27
+Private Const RPM_FECHA1 As Long = 4           ' headers bloque retornos
+Private Const RPM_R_INI As Long = 5
+Private Const RPM_R_FIN As Long = 16
+Private Const RPM_FECHA2 As Long = 20          ' headers bloque Base 0
+Private Const RPM_B_INI As Long = 21
+Private Const RPM_B_FIN As Long = 32
+
+Private Const HOJA_CALC As String = "Calculos"
+Private Const HOJA_RES As String = "Resumen"
+Private Const RPMQ As String = "'Retorno por meses'!"
+
+
 '--------------------- CATALOGO DE FONDOS ----------------------------
 Private Function Catalogo() As Variant
     Catalogo = Array( _
@@ -369,27 +395,6 @@ End Function
 ' (se llama sola al final de ImportarFMS / ImportarFMS_UltimoMes).
 '=====================================================================
 
-'------------------- ANCLAS EN "2. Retornos (2)" ---------------------
-' Verificar contra tu hoja; si algo esta en otra fila/col, se cambia aqui
-Private Const R2_HOJA As String = "2. Retornos (2)"
-Private Const R2_COL_SBS As String = "B"       ' col de Codigo SBS
-Private Const R2_FILA_FECHAS As Long = 7       ' fila de headers de fecha
-Private Const R2_FILA_INI As Long = 8          ' primera fila de fondos
-Private Const R2_FILA_FIN As Long = 30         ' holgura: cubre PEN y USD
-Private Const R2_COL_INI As String = "F"       ' primera col de datos
-Private Const R2_COL_FIN As String = "EQ"      ' ultima col de datos
-
-'------------------- LAYOUT "Retorno por meses" ----------------------
-Private Const HOJA_RPM As String = "Retorno por meses"
-Private Const RPM_MES_INI As Long = 5          ' col E = dic-25
-Private Const RPM_MES_FIN As Long = 29         ' col AC = dic-27
-Private Const RPM_FECHA1 As Long = 4           ' headers bloque retornos
-Private Const RPM_R_INI As Long = 5
-Private Const RPM_R_FIN As Long = 16
-Private Const RPM_FECHA2 As Long = 20          ' headers bloque Base 0
-Private Const RPM_B_INI As Long = 21
-Private Const RPM_B_FIN As Long = 32
-
 Public Sub CrearMonitor()
     Dim ws As Worksheet, cat As Variant
     Dim i As Long, c As Long, f As Date
@@ -554,10 +559,6 @@ End Sub
 '   tablas PEN y USD (anos desde "2. Retornos (2)", YTD/1M/3M/6M,
 '   posicion MM y % de F1/F2) con heatmap de formato condicional.
 '=====================================================================
-Private Const HOJA_CALC As String = "Calculos"
-Private Const HOJA_RES As String = "Resumen"
-Private Const RPMQ As String = "'Retorno por meses'!"
-
 Private Function IdxFMS(fila As Long, filaFecha As Long, refFecha As String) As String
     IdxFMS = "INDEX(FMS!$E$" & fila & ":$BZ$" & fila & ",MATCH(" & refFecha & _
              ",FMS!$E$" & filaFecha & ":$BZ$" & filaFecha & ",0))"
@@ -657,8 +658,8 @@ Public Sub CrearCalculos()
             ws.Cells(65 + k, c).Formula = "=IF(COUNT(" & L & lbl(k)(1) & ":" & _
                 L & lbl(k)(2) & ")=0,"""",SUM(" & L & lbl(k)(1) & ":" & L & lbl(k)(2) & "))"
             ws.Cells(65 + k, c).NumberFormat = "0.00%"
-            pes = "(" & IdxFMSBlq(CLng(nrm(k)(1)) + 0, CLng(nrm(k)(2)) + 0, 4, fPrev) & _
-                  "+" & IdxFMSBlq(CLng(nrm(k)(3)) + 17, CLng(nrm(k)(4)) + 17, 21, fPrev) & ")"
+            pes = "(" & IdxFMSBlq(CLng(nrm(k)(1)), CLng(nrm(k)(2)), 4, fPrev) & _
+                  "+" & IdxFMSBlq(CLng(nrm(k)(3)), CLng(nrm(k)(4)), 21, fPrev) & ")"
             ret = RPMQ & L & nrm(k)(5) & ":" & L & nrm(k)(6)
             ws.Cells(71 + k, c).Formula = "=IFERROR(SUMPRODUCT(" & pes & ",N(" & ret & _
                 "))/SUMPRODUCT(" & pes & "*(" & ret & "<>"""")),"""")"
