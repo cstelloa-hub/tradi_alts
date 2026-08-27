@@ -596,7 +596,12 @@ Private Function Procesar_Interno() As String
 
     ' ---- 3. Eventos ----
     ' re-marcas que REEMPLAZAN (auditada vs no auditada): ultima marca por (fondo, EEFF) en el mes de Config!C8
-    Dim mesRegla As Long, dUltima As Object, pK As String
+    Dim mesRegla As Long, dUltima As Object, pK As String, p As Long
+    If Trim$(Cfg().Range(CF_REMARCA).Value & "") = vbNullString Then     ' Config creada por una version anterior
+        Cfg().Range("B8").Value = "Re-marca reemplaza si mes EEFF = (12=dic, 13=todos, 0=no)"
+        Cfg().Range(CF_REMARCA).Value = 12
+        Cfg().Range(CF_REMARCA).Interior.Color = RGB(255, 242, 204)
+    End If
     mesRegla = Val(Cfg().Range(CF_REMARCA).Value & "")
     Set dUltima = CreateObject("Scripting.Dictionary")
     For p = 1 To n
@@ -611,7 +616,7 @@ Private Function Procesar_Interno() As String
     Set wsE = HojaEventos()
     LimpiarDatos wsE, EV_NCOL
     Dim salida() As Variant, dSeen As Object, ic As Long, dia As Date, eeff As Variant, va As Double
-    Dim sbs As String, fT As Long, flags As String, encontrado As Boolean, p As Long, diaAnt As Object
+    Dim sbs As String, fT As Long, flags As String, encontrado As Boolean, diaAnt As Object
     ReDim salida(1 To n, 1 To EV_NCOL)
     Set dSeen = CreateObject("Scripting.Dictionary"): Set diaAnt = CreateObject("Scripting.Dictionary")
     Dim sinPeso As Long, sinFMS As Long, remarcas As Long, reemplazadas As Long, reemplazada As Boolean
@@ -738,6 +743,12 @@ Private Sub EscribirMatriz(cat As Variant, mesMax As Date)
     ws.Range("A2:ZZ200").Clear
     ws.Range("A2:ZZ200").Font.Name = "Arial": ws.Range("A2:ZZ200").Font.Size = 8
     Dim v As Variant: v = Cfg().Range(CF_MATRIZ).Value
+    If Not IsDate(v) Then                                             ' Config creada por una version anterior
+        Cfg().Range("B7").Value = "Matriz desde (mes)"
+        Cfg().Range(CF_MATRIZ).Value = DateSerial(Year(FechaDesde()) - 2, 1, 1): Cfg().Range(CF_MATRIZ).NumberFormat = "mmm-yy"
+        Cfg().Range(CF_MATRIZ).Interior.Color = RGB(255, 242, 204)
+        v = Cfg().Range(CF_MATRIZ).Value
+    End If
     If IsDate(v) Then mesIni = DateSerial(Year(CDate(v)), Month(CDate(v)), 1) Else mesIni = DateSerial(Year(FechaDesde()) - 2, 1, 1)
     If mesIni > mesMax Then mesIni = DateSerial(Year(mesMax), 1, 1)
     EQ = H_EVT & "!": BQ = H_BDFMS & "!"
