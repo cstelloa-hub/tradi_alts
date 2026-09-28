@@ -80,7 +80,7 @@ Attribute VB_Name = "mod_Iliquidos"
 
 Option Explicit
 
-Private Const VER As String = "2.30"
+Private Const VER As String = "2.31"
 Private Const SH_CFG As String = "Config"
 Private Const SH_INS As String = "Instrumentos"
 Private Const SH_MAP As String = "Mapa"
@@ -3487,20 +3487,53 @@ End Sub
 
 Private Sub FilaNiveles(ws As Worksheet, r As Long, cats As Variant, _
                         r1 As Long, r2 As Long)
-    ' Todo suma pelada, tambien el CY y el CY_PEN: sobre las filas INS de las
-    ' categorias indicadas, de los dos bloques a la vez. Sin ponderar.
+    ' Retornos y pesos: suma pelada sobre las filas INS de las categorias
+    ' indicadas, de los dos bloques a la vez.
+    ' CY y CY_PEN: promedio ponderado por F1+F2. Sumarlos daba 106%, que no es
+    ' el yield de nada: solo crece con la cantidad de fondos.
     Dim j As Long
     mDetalle = "CUADRO: fila de niveles en " & r
     ws.Cells(r, CC_P1).Formula = SumaCats(cats, CC_P1, r1, r2)
     ws.Cells(r, CC_P1 + 1).Formula = SumaCats(cats, CC_P1 + 1, r1, r2)
-    ws.Cells(r, CC_CY).Formula = SumaCats(cats, CC_CY, r1, r2)
-    ws.Cells(r, CC_CYP).Formula = SumaCats(cats, CC_CYP, r1, r2)
+    ws.Cells(r, CC_CY).Formula = PromCats(cats, CC_CY, r1, r2)
+    ws.Cells(r, CC_CYP).Formula = PromCats(cats, CC_CYP, r1, r2)
     For j = 0 To N_VENT - 1
         ws.Cells(r, CC_W1 + j).Formula = SumaCats(cats, CC_W1 + j, r1, r2)
     Next j
     ws.Cells(r, CC_MEN).Formula = SumaCats(cats, CC_MEN, r1, r2)
     ws.Cells(r, CC_ANN).Formula = SumaCats(cats, CC_ANN, r1, r2)
 End Sub
+
+
+Private Function MascaraCats(cats As Variant, a As Long, b As Long) As String
+    ' (tipo="INS") * (cat=c1 + cat=c2 + ...) sobre el tramo a..b
+    Dim j As Long, f As String, rgC As String, rgT As String
+    rgC = "$" & NumALetra(CC_CAT) & "$" & a & ":$" & NumALetra(CC_CAT) & "$" & b
+    rgT = "$" & NumALetra(CC_TIPO) & "$" & a & ":$" & NumALetra(CC_TIPO) & "$" & b
+    f = ""
+    For j = LBound(cats) To UBound(cats)
+        If Len(f) > 0 Then f = f & "+"
+        f = f & "(" & rgC & "=""" & CStr(cats(j)) & """)"
+    Next j
+    MascaraCats = "(" & rgT & "=""INS"")*(" & f & ")"
+End Function
+
+
+Private Function PromCats(cats As Variant, col As Long, _
+                          a As Long, b As Long) As String
+    ' Promedio ponderado por F1+F2 sobre las categorias indicadas, de los dos
+    ' bloques. Mismo rango acotado que el resto: nunca se mira a si misma.
+    Dim base As String, rg As String, w As String
+
+    If Not IsArray(cats) Then Exit Function
+    If b < a Then Exit Function
+    w = "($" & NumALetra(CC_P1) & "$" & a & ":$" & NumALetra(CC_P1) & "$" & b
+    w = w & "+$" & NumALetra(CC_P1 + 1) & "$" & a & ":$" & _
+        NumALetra(CC_P1 + 1) & "$" & b & ")"
+    rg = NumALetra(col) & "$" & a & ":" & NumALetra(col) & "$" & b
+    base = w & "*" & MascaraCats(cats, a, b) & "*ISNUMBER(" & rg & ")"
+    PromCats = "=IFERROR(SUMPRODUCT(" & base & "," & rg & ")/SUMPRODUCT(" & base & "),"""")"
+End Function
 
 
 Private Function SumaCats(cats As Variant, col As Long, _
