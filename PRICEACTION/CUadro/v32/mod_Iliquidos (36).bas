@@ -81,7 +81,7 @@ Attribute VB_Name = "mod_Iliquidos"
 
 Option Explicit
 
-Private Const VER As String = "2.34"
+Private Const VER As String = "2.36"
 Private Const SH_CFG As String = "Config"
 Private Const SH_INS As String = "Instrumentos"
 Private Const SH_MAP As String = "Mapa"
@@ -162,7 +162,7 @@ Public Sub CrearConfig()
     For Each k In Array("C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", _
                         "C10", "C11", "C12", "C13", "C14", "C15", "C16", "C17", _
                         "C55", "C58", "C59", "C60", _
-                        "C61", "C62", "C63", "C64")
+                        "C61", "C62", "C63", "C64", "C53")
         prev(CStr(k)) = ThisWorkbook.Worksheets(SH_CFG).Range(CStr(k)).Value
     Next k
     On Error GoTo Falla
@@ -186,7 +186,8 @@ Public Sub CrearConfig()
     Cfg ws, 6, "Inicio del periodo libre (MayoTD)", Rec(prev, "C6", DateSerial(2026, 5, 1)), _
         "La base del periodo es esta fecha menos un dia."
     Cfg ws, 7, "Base del FY", Rec(prev, "C7", DateSerial(2025, 10, 31)), "FY = 01 nov a 31 oct."
-    Cfg ws, 8, "Dias de la ventana 5D", Rec(prev, "C8", 5), "Dias calendario hacia atras."
+    Cfg ws, 8, "Dias de la ventana 5D", Rec(prev, "C8", 5), _
+        "Dias HABILES hacia atras (lunes a viernes). Los feriados se saltan solos."
     Cfg ws, 9, "Dias sin vector antes de REVISAR", Rec(prev, "C9", 5), _
         "Feriados y fines de semana se saltan solos; mas dias que esto marca REVISAR."
     Cfg ws, 10, "Cargar vectores DESDE", Rec(prev, "C10", Empty), _
@@ -237,6 +238,10 @@ Public Sub CrearConfig()
     Map ws, 50, "Columna Dia", ""
     Map ws, 51, "Columna Codigo SBS", "G"
     Map ws, 52, "Columna Var Ajustada", "F"
+    ' Map recibe String; esto viene de Rec() como Variant, asi que va con Cfg.
+    Cfg ws, 53, "Usar marcas posteriores al corte", Rec(prev, "C53", "SI"), _
+        "SI / NO. SI = un fondo que ya marco despues del corte entra con esa marca."
+    ws.Range("C53").Interior.Color = RGB(255, 242, 204)
     ws.Range("B54").Value = "ORDEN DE LAS CATEGORIAS EN EL CUADRO"
     ws.Range("B54").Font.Bold = True
     Map ws, 55, "Orden (separado por |)", _
@@ -811,6 +816,9 @@ Public Sub CargarMarcas()
     Dim wsIns As Worksheet
     Dim det() As Variant
     Dim nDet As Long
+    Dim usarPost As Boolean
+    Dim dTope As Double
+    Dim dMax As Double
     Dim cod As String
     Dim fila As Long
     Dim ultF As Long
@@ -951,6 +959,16 @@ Public Sub CargarMarcas()
     If dCorte <= 0 Then dCorte = CDbl(Date)
     bases = BasesVentana(wsCfg, dCorte)
 
+    ' Los fondos marcan mensual y a veces la marca de fin de mes sale despues
+    ' de la fecha de corte del vector. Cortar ahi se comia un mes entero del
+    ' YTD. Config C53 manda: SI las toma igual, NO vuelve a cortar en el corte.
+    usarPost = (UCase$(Txt(wsCfg.Range("C53").Value)) <> "NO")
+    If usarPost Then
+        dTope = 2958465#
+    Else
+        dTope = dCorte
+    End If
+
     Set acum = NuevoDic()
     Set ultMar = NuevoDic()
     ' Cada marca que se usa se guarda para poder auditar de donde sale cada
@@ -970,7 +988,7 @@ Public Sub CargarMarcas()
                 If EsNumero(v(i, colVar)) Then
                     vAdj = CDbl(v(i, colVar))
                     If Abs(vAdj) > 1 Then raros = raros + 1
-                    If vAdj > -1 And dFe <= dCorte Then
+                    If vAdj > -1 And dFe <= dTope Then
                         If Not acum.Exists(cla) Then
                             acum(cla) = Array(0, 0, 0, 0, 0, 0)
                         End If
@@ -996,7 +1014,10 @@ Public Sub CargarMarcas()
                 End If
                 If Not ultMar.Exists(cla) Then ultMar(cla) = 0
                 If dFe > CDbl(ultMar(cla)) Then
-                    If dFe <= dCorte Then ultMar(cla) = dFe
+                    If dFe <= dTope Then
+                        ultMar(cla) = dFe
+                        If dFe > dMax Then dMax = dFe
+                    End If
                 End If
             End If
         End If
@@ -1049,6 +1070,16 @@ Public Sub CargarMarcas()
     msg = msg & "Con marcas (usan Marcas): " & (mapa.Count - nSinMarca) & vbCrLf
     msg = msg & "Marcas usadas: " & Format$(nUsadas, "#,##0") & vbCrLf
     msg = msg & "Corte: " & Format$(CDate(dCorte), "dd/mm/yyyy") & vbCrLf
+    If usarPost Then
+        msg = msg & "Marcas posteriores al corte: SI se usan (Config C53)." & vbCrLf
+        If dMax > dCorte Then
+            msg = msg & "OJO: la marca mas nueva es del " & _
+                  Format$(CDate(dMax), "dd/mm/yyyy") & ", posterior al corte." & vbCrLf
+            msg = msg & "Los fondos llegan hasta ahi; los bonos, hasta el corte." & vbCrLf
+        End If
+    Else
+        msg = msg & "Marcas posteriores al corte: NO se usan (Config C53)." & vbCrLf
+    End If
 
     If nSinMarca > 0 Then
         msg = msg & "Sin marcas (usan el vector): " & nSinMarca & vbCrLf
@@ -3213,11 +3244,29 @@ Private Sub ArmarRetornos(ins As Object, orden As Variant, dCorte As Double, wsC
 End Sub
 
 
+Private Function RestarHabiles(ByVal dFin As Double, ByVal cuantos As Long) As Double
+    ' Resta dias habiles (lunes a viernes). Los feriados no se conocen, pero
+    ' como el precio se busca hacia atras desde la base, un feriado no rompe:
+    ' simplemente se toma el ultimo vector que exista antes.
+    Dim i As Long
+    RestarHabiles = dFin
+    If cuantos <= 0 Then Exit Function
+    For i = 1 To cuantos
+        Do
+            RestarHabiles = RestarHabiles - 1
+        Loop While Weekday(CDate(RestarHabiles), vbMonday) > 5
+    Next i
+End Function
+
+
 Private Function BasesVentana(wsCfg As Worksheet, dCorte As Double) As Double()
     Dim b(0 To 5) As Double, dc As Date
     dc = CDate(dCorte)
-    b(0) = dCorte - (Weekday(dc, vbMonday) - 1) - 1              ' WTD: domingo anterior
-    b(1) = dCorte - NumDef(wsCfg.Range("C8").Value, 5)           ' 5D
+    ' WTD: el domingo anterior. Como el precio se busca hacia atras, el que
+    ' termina usando es el del viernes de la semana pasada.
+    b(0) = dCorte - (Weekday(dc, vbMonday) - 1) - 1
+    ' 5D: cinco dias HABILES hacia atras, no calendario.
+    b(1) = RestarHabiles(dCorte, CLng(NumDef(wsCfg.Range("C8").Value, 5)))
     b(2) = CDbl(DateSerial(Year(dc), Month(dc), 0))              ' MTD
     If IsDate(wsCfg.Range("C6").Value) Then
         b(3) = CDbl(CDate(wsCfg.Range("C6").Value)) - 1          ' MayoTD
