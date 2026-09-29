@@ -81,7 +81,7 @@ Attribute VB_Name = "mod_Iliquidos"
 
 Option Explicit
 
-Private Const VER As String = "2.38"
+Private Const VER As String = "2.39"
 Private Const SH_CFG As String = "Config"
 Private Const SH_INS As String = "Instrumentos"
 Private Const SH_MAP As String = "Mapa"
@@ -1049,9 +1049,7 @@ Public Sub CargarMarcas()
                 Else
                     wsFon.Cells(fila, 4 + j).Value = Exp(CDbl(arr(j))) - 1
                 End If
-                wsFon.Cells(fila, 12 + j).Formula = _
-                    "=IFERROR(IF(COUNTIFS(mdCod,$A" & fila & ",mdW" & (j + 1) & ",1)=0,""""," & _
-                    "EXP(SUMIFS(mdLn,mdCod,$A" & fila & ",mdW" & (j + 1) & ",1))-1),""ERROR"")"
+                wsFon.Cells(fila, 12 + j).Formula = ChequeoVentana(fila, j, nDet)
                 wsFon.Cells(fila, 18 + j).Value = CLng(arr(6 + j))
             Next j
             wsFon.Cells(fila, 10).Value = CDbl(ultMar(k))
@@ -1099,6 +1097,10 @@ Public Sub CargarMarcas()
         msg = msg & "Si vienen en % y no en tanto por uno, el retorno sale disparado." & vbCrLf
     End If
     msg = msg & "Marcas guardadas en " & SH_MDE & ": " & Format$(nDet, "#,##0") & vbCrLf
+    If Not NombreExiste("mdCod") Then
+        msg = msg & "AVISO: no se pudieron crear los nombres definidos de " & SH_MDE & "." & vbCrLf
+        msg = msg & "No pasa nada: las formulas de chequeo apuntan a la hoja directo." & vbCrLf
+    End If
     msg = msg & vbCrLf & "Para auditar un numero: filtra " & SH_MDE & " por el codigo" & vbCrLf
     msg = msg & "y por la ventana (1 en su columna). El retorno es" & vbCrLf
     msg = msg & "EXP(SUMA de la columna LN(1+var)) - 1." & vbCrLf
@@ -1109,6 +1111,28 @@ Public Sub CargarMarcas()
 Falla:
     Reventar wb, calcPrev, scrPrev, evPrev, "CargarMarcas"
 End Sub
+
+
+Private Function ChequeoVentana(fila As Long, j As Long, nDet As Long) As String
+    ' La misma cuenta que hace el VBA, escrita como formula sobre
+    ' Marcas_Detalle. Apunta a la hoja directo y NO a nombres definidos:
+    ' si un nombre no se crea, la formula devolvia error y no se sabia por que.
+    Dim rCod As String, rLn As String, rW As String, f As String
+    If nDet < 1 Then Exit Function
+    rCod = RefDetalle(1, nDet)
+    rLn = RefDetalle(5, nDet)
+    rW = RefDetalle(6 + j, nDet)
+    f = "=IFERROR(IF(COUNTIFS(" & rCod & ",$A" & fila & "," & rW & ",1)=0,"""","
+    f = f & "EXP(SUMIFS(" & rLn & "," & rCod & ",$A" & fila & "," & rW & ",1))-1),""ERROR"")"
+    ChequeoVentana = f
+End Function
+
+
+Private Function RefDetalle(col As Long, nDet As Long) As String
+    Dim L As String
+    L = NumALetra(col)
+    RefDetalle = SH_MDE & "!$" & L & "$2:$" & L & "$" & (nDet + 1)
+End Function
 
 
 Private Sub EscribirDetalleMarcas(det As Variant, nDet As Long)
@@ -3141,6 +3165,15 @@ Public Sub CrearFondos()
            "Pon la ruta de Marcas en Config C46 y corre CargarMarcas.", _
            vbInformation, "Fondos"
 End Sub
+
+
+Private Function NombreExiste(nombre As String) As Boolean
+    Dim nm As Name
+    On Error Resume Next
+    Set nm = ThisWorkbook.Names(nombre)
+    On Error GoTo 0
+    NombreExiste = Not nm Is Nothing
+End Function
 
 
 Private Sub DefinirNombresFondos()
